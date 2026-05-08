@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LINE 貼圖裁剪器</title>
+<!-- 1. JSZip 預先載入，避免點擊下載時網路延遲 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+
+  :root {
+    --green: #06C755;
+    --green-dark: #05a847;
+    --green-light: #e8faf0;
+    --bg: #f0f4f0;
+    --white: #ffffff;
+    --gray-100: #f7f7f7;
+    --gray-200: #e8e8e8;
+    --gray-600: #666;
+    --gray-900: #111;
+    --shadow: 0 4px 24px rgba(6,199,85,0.10), 0 1px 4px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans TC', sans-serif; background: var(--bg); min-height: 100vh; color: var(--gray-900); }
+
+  header {
+    background: var(--white);
+    border-bottom: 2px solid var(--green);
+    padding: 0 24px;
+    display: flex; align-items: center; gap: 12px;
+    height: 60px; position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 12px rgba(6,199,85,0.08);
+  }
+  .logo { width:36px;height:36px;background:var(--green);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px; }
+  header h1 { font-size:18px;font-weight:900;letter-spacing:-0.5px; }
+  header .sub { font-size:12px;color:var(--gray-600);font-weight:400; }
+
+  .container { max-width:960px;margin:0 auto;padding:24px 16px 80px; }
+
+  /* Upload */
+  .upload-zone {
+    border: 2.5px dashed var(--green);
+    border-radius: 20px; background: var(--white);
+    padding: 48px 24px; text-align: center; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    position: relative; overflow: hidden;
+  }
+  .upload-zone:hover, .upload-zone.drag-over { background: var(--green-light); border-color: var(--green-dark); }
+  .upload-zone input[type=file] { position:absolute;inset:0;opacity:0;cursor:pointer; }
+  .upload-icon { font-size:48px;margin-bottom:12px; }
+  .upload-zone h2 { font-size:18px;font-weight:700; }
+  .upload-zone p { font-size:13px;color:var(--gray-600);margin-top:6px; }
+
+  /* Config */
+  .config-panel {
+    background: var(--white); border-radius: 16px;
+    padding: 20px; margin-top: 20px; box-shadow: var(--shadow);
+    display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+  }
+  .cfg { display:flex;flex-direction:column;gap:6px;min-width:110px; }
+  .cfg label { font-size:12px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px; }
+  .cfg input[type=number], .cfg select {
+    border: 1.5px solid var(--gray-200); border-radius:8px;
+    padding: 8px 10px; font-size:14px; font-family:inherit;
+    outline:none; transition:border-color .15s; background:var(--gray-100);
+  }
+  .cfg input:focus, .cfg select:focus { border-color:var(--green);background:var(--white); }
+
+  /* Tolerance sub-panel */
+  .tol-group { display:flex;flex-direction:column;gap:6px;min-width:180px; }
+  .tol-group > label { font-size:12px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px; }
+  .tol-row { display:flex;align-items:center;gap:8px; }
+  .tol-row input[type=range] { flex:1;accent-color:var(--green);cursor:pointer; }
+  .tol-val { font-size:13px;font-weight:700;color:var(--green-dark);min-width:28px;text-align:right; }
+  .ff-row { display:flex;align-items:center;gap:6px;margin-top:4px; }
+  .ff-row label { font-size:12px;color:var(--gray-600);text-transform:none;letter-spacing:0; }
+  .ff-row input { width:15px;height:15px;accent-color:var(--green);cursor:pointer; }
+
+  /* Checkbox pairs */
+  .chk-pair { display:flex;flex-direction:row;align-items:center;gap:8px;min-width:unset; }
+  .chk-pair label { font-size:12px;font-weight:700;color:var(--gray-600); }
+  .chk-pair input[type=checkbox] { width:18px;height:18px;accent-color:var(--green);cursor:pointer; }
+
+  .btn {
+    display:inline-flex;align-items:center;gap:6px;
+    padding:10px 20px;border-radius:10px;font-size:14px;
+    font-weight:700;font-family:inherit;cursor:pointer;border:none;
+    transition:all .15s;white-space:nowrap;
+  }
+  .btn-green { background:var(--green);color:#fff; }
+  .btn-green:hover { background:var(--green-dark);transform:translateY(-1px); }
+  .btn-outline { background:var(--white);color:var(--green-dark);border:1.5px solid var(--green); }
+  .btn-outline:hover { background:var(--green-light); }
+  .btn:disabled { opacity:.4;cursor:not-allowed;transform:none !important; }
+
+  /* Preview */
+  .preview-area { margin-top:20px;background:var(--white);border-radius:16px;padding:20px;box-shadow:var(--shadow);display:none; }
+  .preview-area.visible { display:block; }
+  .preview-header { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px; }
+  .preview-header h3 { font-size:16px;font-weight:700; }
+  .count-badge { background:var(--green);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px; }
+
+  /* Image + grid overlay */
+  .img-wrap { position:relative;display:inline-block;max-width:100%;margin-bottom:16px;border-radius:8px;overflow:hidden;border:1px solid var(--gray-200); }
+  #previewImg { display:block;max-width:100%;max-height:420px;width:100%;object-fit:contain; }
+  #gridOverlay { position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none; }
+
+  #sourceCanvas { display:none; }
+
+  /* Sticker grid */
+  .sticker-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px; }
+  .sticker-card { border:1.5px solid var(--gray-200);border-radius:12px;overflow:hidden;background:#fafafa;position:relative;transition:box-shadow .15s,border-color .15s; }
+  .sticker-card:hover { border-color:var(--green);box-shadow:0 4px 16px rgba(6,199,85,.15); }
+  .sticker-card canvas { display:block;width:100%;aspect-ratio:1; }
+  .sticker-label { font-size:11px;font-weight:700;color:var(--gray-600);padding:5px 8px;background:var(--white);border-top:1px solid var(--gray-200);text-align:center; }
+  .special-tag { font-size:10px;background:#fff3e0;color:#e65100;font-weight:700;padding:3px 8px;border-radius:0 0 12px 12px;text-align:center;border-top:1px solid #ffe0b2; }
+  .dl-btn { position:absolute;top:6px;right:6px;width:28px;height:28px;background:var(--green);color:#fff;border:none;border-radius:50%;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s; }
+  .sticker-card:hover .dl-btn { opacity:1; }
+
+  /* Spec */
+  .spec-box { background:#fffbe6;border:1.5px solid #f0d060;border-radius:12px;padding:14px 16px;margin-top:20px;font-size:13px;line-height:1.8; }
+  .spec-box strong { color:#b8860b; }
+
+  /* Progress */
+  .progress-bar-wrap { height:4px;background:var(--gray-200);border-radius:2px;margin-top:16px;display:none; }
+  .progress-bar-wrap.visible { display:block; }
+  .progress-bar { height:100%;background:var(--green);border-radius:2px;transition:width .2s; }
+  .msg { text-align:center;font-size:13px;color:var(--gray-600);margin-top:10px;min-height:20px; }
+
+  /* Actions */
+  .actions-bar { display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px; }
+  .size-tag { font-size:11px;background:var(--green-light);color:var(--green-dark);font-weight:700;padding:3px 8px;border-radius:6px; }
+  .line-tag { font-size:11px;background:#fff3e0;color:#e65100;font-weight:700;padding:3px 8px;border-radius:6px; }
+
+  @media(max-width:600px){
+    .sticker-grid{grid-template-columns:repeat(3,1fr);gap:8px;}
+    .tol-group{min-width:100%;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">💬</div>
+  <div>
+    <h1>LINE 貼圖裁剪器</h1>
+    <div class="sub">自動裁切 → 匯出符合 LINE 官方規格貼圖</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="upload-zone" id="uploadZone">
+    <input type="file" id="fileInput" accept="image/*">
+    <div class="upload-icon">🖼️</div>
+    <h2>上傳貼圖表格圖片</h2>
+    <p>支援含多格貼圖的整張圖片（JPG / PNG）<br>拖曳或點擊上傳</p>
+  </div>
+
+  <div class="config-panel" id="configPanel" style="display:none">
+    <div class="cfg">
+      <label>欄數 Cols</label>
+      <input type="number" id="cols" value="4" min="1" max="10">
+    </div>
+    <div class="cfg">
+      <label>列數 Rows</label>
+      <input type="number" id="rows" value="4" min="1" max="10">
+    </div>
+    <div class="cfg">
+      <label>輸出尺寸</label>
+      <select id="outputSize">
+        <option value="370">370×370（標準）</option>
+        <option value="740">740×740（2x）</option>
+        <option value="240">240×240（小）</option>
+        <option value="512">512×512</option>
+      </select>
+    </div>
+    <div class="cfg">
+      <label>邊距裁除 px</label>
+      <input type="number" id="padding" value="0" min="0" max="50">
+    </div>
+    <div class="chk-pair">
+      <input type="checkbox" id="removeWhite">
+      <label for="removeWhite">去白底</label>
+    </div>
+    <!-- 2. 容差 + 魔術棒（只在勾選去白底時顯示）-->
+    <div class="tol-group" id="tolGroup" style="display:none">
+      <label>容差值 Tolerance</label>
+      <div class="tol-row">
+        <input type="range" id="tolerance" min="5" max="120" value="30">
+        <span class="tol-val" id="tolVal">30</span>
+      </div>
+      <div class="ff-row">
+        <input type="checkbox" id="useFloodFill" checked>
+        <label for="useFloodFill">魔術棒（保護內部白色）</label>
+      </div>
+    </div>
+    <!-- 3. LINE 官方命名 -->
+    <div class="chk-pair">
+      <input type="checkbox" id="lineNaming" checked>
+      <label for="lineNaming">LINE 官方命名</label>
+    </div>
+    <button class="btn btn-green" id="cropBtn">✂️ 開始裁切</button>
+  </div>
+
+  <div class="spec-box">
+    <strong>📋 LINE 貼圖規格提醒：</strong><br>
+    • 一般貼圖：W 370 × H 320 px（方形 370×370 亦可）<br>
+    • 格式：PNG，透明背景，每張 ≤ 1 MB<br>
+    • 一套：8 / 16 / 24 / 32 / 40 張 ＋ main.png (240×240) ＋ tab.png (96×74)<br>
+    • 勾選「LINE 官方命名」後，ZIP 自動附上 main + tab，可直接上傳 Creators Market<br>
+    • <a href="https://creator.line.me/en/guideline/sticker/" target="_blank" style="color:var(--green-dark)">LINE Creators Market 完整指南 →</a>
+  </div>
+
+  <div class="preview-area" id="previewArea">
+    <div class="preview-header">
+      <h3>📦 預覽 &amp; 裁切</h3>
+      <span class="count-badge" id="countBadge">— 張</span>
+    </div>
+
+    <!-- 1. 圖片 + 即時裁切線疊層 -->
+    <div class="img-wrap" id="imgWrap">
+      <img id="previewImg" alt="Source">
+      <canvas id="gridOverlay"></canvas>
+    </div>
+
+    <canvas id="sourceCanvas"></canvas>
+
+    <div class="progress-bar-wrap" id="progressWrap">
+      <div class="progress-bar" id="progressBar" style="width:0%"></div>
+    </div>
+    <div class="msg" id="statusMsg"></div>
+
+    <div class="sticker-grid" id="stickerGrid"></div>
+
+    <div class="actions-bar" id="actionsBar" style="display:none">
+      <button class="btn btn-green" id="downloadAllBtn">⬇️ 全部下載 (ZIP)</button>
+      <button class="btn btn-outline" id="resetBtn">🔄 重新上傳</button>
+      <span class="size-tag" id="sizeTag"></span>
+      <span class="line-tag" id="lineTag" style="display:none">✅ 含 main + tab</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+// ─── State ────────────────────────────────────────────────
+var sourceImage = null;
+var croppedItems = []; // [{canvas, filename, isSpecial}]
+
+// ─── Elements ─────────────────────────────────────────────
+var uploadZone    = document.getElementById('uploadZone');
+var fileInput     = document.getElementById('fileInput');
+var configPanel   = document.getElementById('configPanel');
+var previewArea   = document.getElementById('previewArea');
+var previewImg    = document.getElementById('previewImg');
+var gridOverlay   = document.getElementById('gridOverlay');
+var sourceCanvas  = document.getElementById('sourceCanvas');
+var stickerGrid   = document.getElementById('stickerGrid');
+var actionsBar    = document.getElementById('actionsBar');
+var countBadge    = document.getElementById('countBadge');
+var sizeTag       = document.getElementById('sizeTag');
+var lineTag       = document.getElementById('lineTag');
+var progressWrap  = document.getElementById('progressWrap');
+var progressBar   = document.getElementById('progressBar');
+var statusMsg     = document.getElementById('statusMsg');
+var cropBtn       = document.getElementById('cropBtn');
+var downloadAllBtn= document.getElementById('downloadAllBtn');
+var resetBtn      = document.getElementById('resetBtn');
+var removeWhiteChk= document.getElementById('removeWhite');
+var tolGroup      = document.getElementById('tolGroup');
+var tolSlider     = document.getElementById('tolerance');
+var tolVal        = document.getElementById('tolVal');
+var useFloodFill  = document.getElementById('useFloodFill');
+var lineNamingChk = document.getElementById('lineNaming');
+
+// ─── Show/hide tolerance group ────────────────────────────
+removeWhiteChk.addEventListener('change', function() {
+  tolGroup.style.display = this.checked ? 'flex' : 'none';
+});
+tolSlider.addEventListener('input', function() {
+  tolVal.textContent = this.value;
+});
+
+// ─── Upload ───────────────────────────────────────────────
+uploadZone.addEventListener('dragover', function(e) {
+  e.preventDefault();
+  uploadZone.classList.add('drag-over');
+});
+uploadZone.addEventListener('dragleave', function() {
+  uploadZone.classList.remove('drag-over');
+});
+uploadZone.addEventListener('drop', function(e) {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', function() {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+function handleFile(file) {
+  if (!file.type.match('image.*')) { alert('請上傳圖片檔案！'); return; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var img = new Image();
+    img.onload = function() {
+      sourceImage = img;
+      previewImg.src = e.target.result;
+      previewImg.onload = function() { drawGrid(); };
+      configPanel.style.display = 'flex';
+      previewArea.classList.add('visible');
+      stickerGrid.innerHTML = '';
+      croppedItems = [];
+      actionsBar.style.display = 'none';
+      progressWrap.classList.remove('visible');
+      progressBar.style.width = '0%';
+      statusMsg.textContent = '✅ 圖片載入成功，調整欄列數即時預覽裁切線，確認後按「開始裁切」';
+      autoDetect(img);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function autoDetect(img) {
+  var ratio = img.width / img.height;
+  if (ratio > 1.5)       { cols().value = 4; rows().value = 2; }
+  else if (ratio < 0.75) { cols().value = 3; rows().value = 4; }
+  else                   { cols().value = 4; rows().value = 4; }
+  updateBadge();
+}
+
+function cols()  { return document.getElementById('cols'); }
+function rows()  { return document.getElementById('rows'); }
+function nCols() { return Math.max(1, parseInt(cols().value) || 1); }
+function nRows() { return Math.max(1, parseInt(rows().value) || 1); }
+function nPad()  { return Math.max(0, parseInt(document.getElementById('padding').value) || 0); }
+
+['cols','rows','padding'].forEach(function(id) {
+  document.getElementById(id).addEventListener('input', function() {
+    if (sourceImage) drawGrid();
+    updateBadge();
+  });
+});
+
+function updateBadge() {
+  countBadge.textContent = (nCols() * nRows()) + ' 張';
+}
+
+// ─── 1. Live Grid Overlay ─────────────────────────────────
+function drawGrid() {
+  var c = nCols(), r = nRows(), pad = nPad();
+  var dw = previewImg.clientWidth;
+  var dh = previewImg.clientHeight;
+  if (!dw || !dh) return;
+
+  gridOverlay.width  = dw;
+  gridOverlay.height = dh;
+  var ctx = gridOverlay.getContext('2d');
+  ctx.clearRect(0, 0, dw, dh);
+
+  var cw = dw / c;
+  var ch = dh / r;
+
+  // Grid lines
+  ctx.save();
+  ctx.strokeStyle = 'rgba(6,199,85,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 3]);
+  for (var ci = 1; ci < c; ci++) {
+    ctx.beginPath(); ctx.moveTo(ci * cw, 0); ctx.lineTo(ci * cw, dh); ctx.stroke();
+  }
+  for (var ri = 1; ri < r; ri++) {
+    ctx.beginPath(); ctx.moveTo(0, ri * ch); ctx.lineTo(dw, ri * ch); ctx.stroke();
+  }
+
+  // Padding inset (show in first cell as guide)
+  if (pad > 0) {
+    var sx = dw / (sourceImage.width || dw);
+    var sy = dh / (sourceImage.height || dh);
+    var px = pad * sx, py = pad * sy;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = 'rgba(255,140,0,0.75)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px, py, cw - px * 2, ch - py * 2);
+  }
+
+  // Cell index labels
+  ctx.setLineDash([]);
+  ctx.font = 'bold 12px Noto Sans TC, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (var rr = 0; rr < r; rr++) {
+    for (var cc = 0; cc < c; cc++) {
+      var lx = cc * cw + cw / 2;
+      var ly = rr * ch + ch / 2;
+      ctx.fillStyle = 'rgba(0,0,0,0.38)';
+      ctx.beginPath();
+      ctx.roundRect(lx - 13, ly - 9, 26, 18, 4);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(rr * c + cc + 1, lx, ly);
+    }
+  }
+  ctx.restore();
+}
+
+// ─── 2a. Flood Fill (魔術棒去背) ──────────────────────────
+// Seeds from all four edges, only removes background-connected pixels.
+function floodFillRemoveBg(imgData, w, h, tol) {
+  var d = imgData.data;
+
+  function idx(x, y) { return (y * w + x) * 4; }
+  function diff(i, br, bg, bb) {
+    return Math.abs(d[i] - br) + Math.abs(d[i+1] - bg) + Math.abs(d[i+2] - bb);
+  }
+
+  // Sample background colour from four corners
+  var bgR = 255, bgG = 255, bgB = 255;
+  var corners = [idx(0,0), idx(w-1,0), idx(0,h-1), idx(w-1,h-1)];
+  for (var ci = 0; ci < corners.length; ci++) {
+    var ki = corners[ci];
+    if (d[ki] > 180 && d[ki+1] > 180 && d[ki+2] > 180) {
+      bgR = d[ki]; bgG = d[ki+1]; bgB = d[ki+2]; break;
+    }
+  }
+
+  var visited = new Uint8Array(w * h);
+  var stack = [];
+
+  function push(x, y) {
+    if (x < 0 || x >= w || y < 0 || y >= h) return;
+    var pos = y * w + x;
+    if (visited[pos]) return;
+    var i = pos * 4;
+    if (d[i+3] === 0) { visited[pos] = 1; return; }
+    var dt = diff(i, bgR, bgG, bgB);
+    if (dt <= tol) {
+      visited[pos] = 1;
+      // Feather edge: alpha proportional to distance from threshold
+      d[i+3] = Math.round((dt / tol) * d[i+3]);
+      stack.push(pos);
+    }
+  }
+
+  // Seed from all four borders
+  for (var x = 0; x < w; x++) { push(x, 0); push(x, h-1); }
+  for (var y = 0; y < h; y++) { push(0, y); push(w-1, y); }
+
+  while (stack.length > 0) {
+    var pos = stack.pop();
+    var px = pos % w, py = Math.floor(pos / w);
+    push(px-1, py); push(px+1, py); push(px, py-1); push(px, py+1);
+  }
+}
+
+// ─── 2b. Simple threshold (with feathering) ───────────────
+function thresholdRemoveBg(imgData, tol) {
+  var d = imgData.data;
+  var thresh = 255 - tol;
+  for (var i = 0; i < d.length; i += 4) {
+    var lo = Math.min(d[i], d[i+1], d[i+2]);
+    if (lo >= thresh) {
+      var t = (lo - thresh) / (255 - thresh + 1);
+      d[i+3] = Math.round(t * d[i+3]);
+    }
+  }
+}
+
+// ─── Crop ─────────────────────────────────────────────────
+cropBtn.addEventListener('click', function() {
+  if (!sourceImage) return;
+  var c   = nCols();
+  var r   = nRows();
+  var sz  = parseInt(document.getElementById('outputSize').value) || 370;
+  var pad = nPad();
+  var doRm  = removeWhiteChk.checked;
+  var tol   = parseInt(tolSlider.value) || 30;
+  var doFF  = doRm && useFloodFill.checked;
+  var doLN  = lineNamingChk.checked;
+
+  stickerGrid.innerHTML = '';
+  croppedItems = [];
+  actionsBar.style.display = 'none';
+  progressWrap.classList.add('visible');
+  progressBar.style.width = '0%';
+  statusMsg.textContent = '裁切中…';
+
+  var sCtx = sourceCanvas.getContext('2d');
+  sourceCanvas.width  = sourceImage.width;
+  sourceCanvas.height = sourceImage.height;
+  sCtx.drawImage(sourceImage, 0, 0);
+
+  var cellW = Math.floor(sourceImage.width  / c);
+  var cellH = Math.floor(sourceImage.height / r);
+  var total = c * r;
+  var done  = 0;
+
+  function next(ri, ci) {
+    if (ri >= r) {
+      // 3. LINE 官方命名：附上 main.png + tab.png
+      if (doLN && croppedItems.length > 0) {
+        addSpecial(croppedItems[0].canvas, 240, 240, 'main.png', '主圖 main.png');
+        addSpecial(croppedItems[0].canvas, 96,  74,  'tab.png',  'Tab tab.png');
+      }
+      progressBar.style.width = '100%';
+      countBadge.textContent = croppedItems.length + ' 張';
+      sizeTag.textContent = sz + '×' + sz + ' px';
+      lineTag.style.display = doLN ? 'inline-block' : 'none';
+      actionsBar.style.display = 'flex';
+      statusMsg.textContent = '✅ 裁切完成！共 ' + total + ' 張' + (doLN ? '（含 main + tab）' : '');
+      return;
+    }
+    var nci = ci + 1, nri = ri;
+    if (nci >= c) { nci = 0; nri = ri + 1; }
+
+    setTimeout(function() {
+      var x = ci * cellW + pad;
+      var y = ri * cellH + pad;
+      var w = cellW - pad * 2;
+      var h = cellH - pad * 2;
+
+      // Step 1: crop
+      var tmp = document.createElement('canvas');
+      tmp.width = w; tmp.height = h;
+      var tCtx = tmp.getContext('2d');
+      tCtx.drawImage(sourceCanvas, x, y, w, h, 0, 0, w, h);
+
+      // Step 2: remove bg
+      if (doRm) {
+        var imgData = tCtx.getImageData(0, 0, w, h);
+        if (doFF) floodFillRemoveBg(imgData, w, h, tol * 2.5);
+        else      thresholdRemoveBg(imgData, tol);
+        tCtx.putImageData(imgData, 0, 0);
+      }
+
+      // Step 3: resize
+      var out = document.createElement('canvas');
+      out.width = sz; out.height = sz;
+      var oCtx = out.getContext('2d');
+      oCtx.imageSmoothingEnabled = true;
+      oCtx.imageSmoothingQuality = 'high';
+      oCtx.drawImage(tmp, 0, 0, sz, sz);
+
+      var num = ri * c + ci + 1;
+      var fn  = doLN ? String(num).padStart(2,'0') + '.png'
+                     : 'sticker_' + String(num).padStart(2,'0') + '.png';
+
+      croppedItems.push({ canvas: out, filename: fn, isSpecial: false });
+      addCard(out, fn, num + ' / ' + total, false);
+
+      done++;
+      progressBar.style.width = (done / total * 100) + '%';
+      next(nri, nci);
+    }, 8);
+  }
+
+  next(0, 0);
+});
+
+function addSpecial(src, w, h, fn, label) {
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  var ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, w, h);
+  croppedItems.push({ canvas: c, filename: fn, isSpecial: true });
+  addCard(c, fn, label, true);
+}
+
+function addCard(canvas, filename, labelText, isSpecial) {
+  var card = document.createElement('div');
+  card.className = 'sticker-card';
+
+  var disp = document.createElement('canvas');
+  disp.width = canvas.width; disp.height = canvas.height;
+  disp.getContext('2d').drawImage(canvas, 0, 0);
+
+  var lbl = document.createElement('div');
+  lbl.className = isSpecial ? 'special-tag' : 'sticker-label';
+  lbl.textContent = labelText;
+
+  var dlBtn = document.createElement('button');
+  dlBtn.className = 'dl-btn';
+  dlBtn.textContent = '↓';
+  dlBtn.title = '下載此張';
+  (function(oc, fn) {
+    dlBtn.addEventListener('click', function() {
+      var a = document.createElement('a');
+      a.download = fn;
+      a.href = oc.toDataURL('image/png');
+      a.click();
+    });
+  })(canvas, filename);
+
+  card.appendChild(disp);
+  card.appendChild(lbl);
+  card.appendChild(dlBtn);
+  stickerGrid.appendChild(card);
+}
+
+// ─── Download All ZIP ─────────────────────────────────────
+downloadAllBtn.addEventListener('click', function() {
+  if (!croppedItems.length) return;
+  if (typeof JSZip === 'undefined') {
+    statusMsg.textContent = '⚠️ JSZip 載入失敗，請檢查網路後重試';
+    return;
+  }
+  downloadAllBtn.disabled = true;
+  downloadAllBtn.textContent = '打包中…';
+
+  var zip = new JSZip();
+  var folder = zip.folder('line_stickers');
+  croppedItems.forEach(function(item) {
+    var b64 = item.canvas.toDataURL('image/png').split(',')[1];
+    folder.file(item.filename, b64, { base64: true });
+  });
+
+  zip.generateAsync({ type: 'blob' }).then(function(blob) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'line_stickers.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+    downloadAllBtn.disabled = false;
+    downloadAllBtn.textContent = '⬇️ 全部下載 (ZIP)';
+  });
+});
+
+// ─── Reset ────────────────────────────────────────────────
+resetBtn.addEventListener('click', function() {
+  sourceImage = null; croppedItems = [];
+  stickerGrid.innerHTML = '';
+  previewImg.src = '';
+  var ctx = gridOverlay.getContext('2d');
+  ctx.clearRect(0, 0, gridOverlay.width, gridOverlay.height);
+  actionsBar.style.display = 'none';
+  configPanel.style.display = 'none';
+  previewArea.classList.remove('visible');
+  progressWrap.classList.remove('visible');
+  progressBar.style.width = '0%';
+  statusMsg.textContent = '';
+  lineTag.style.display = 'none';
+  fileInput.value = '';
+});
+</script>
+</body>
+</html>
