@@ -1,9 +1,9 @@
 {
-  "name": "Line-cropper",
-  "short_name": "Line-cropper",
-  "description": "Line-cropper",
-  "start_url": "/cut/",
-  "scope": "/cut/",
+  "name": "Line動畫製作",
+  "short_name": "Line動畫製作 ",
+  "description": "Line動畫製作",
+  "start_url": "/cmt/",
+  "scope": "/cmt/",
   "display": "standalone",
   "orientation": "any",
   "theme_color": "#1a73e8",
@@ -14,9 +14,9 @@
   ],
   "shortcuts": [
     {
-      "name": "開啟 Line-cropper",
-      "short_name": "Line-cropper",
-      "url": "/cut/",
+      "name": "開啟 Line動畫製作 ",
+      "short_name": "Line動畫製作 ",
+      "url": "/cmt/",
       "icons": [
         {
           "src": "icon-192.png",
