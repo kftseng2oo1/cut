@@ -1,43 +1,23 @@
-# Line動畫製作
+# LINE 貼圖裁剪器
 
-> Line動畫製作
+把一整張排好的貼圖表格圖片，依欄列自動裁成單張，去背後打包成 ZIP，符合 LINE 貼圖上架規格。
 
-## 📦 包含檔案
+**線上使用**：https://kftseng2oo1.github.io/cut/
 
-- `icon-192.png`
-- `icon-512.png`
-- `manifest.json`
-- `sw.js`
-- `index.html`
-- `icon.svg`
-- `icon-maskable.svg`
+## 主要功能
+- 上傳貼圖表格圖，自動偵測或手動設定欄數、列數、內距，即時預覽裁切線
+- 兩種去背：從邊緣填色去背、門檻值去背
+- 自動產生 `main.png` 主圖與 `tab.png` 分頁圖
+- 每張可單獨下載，或「⬇️ 全部下載 (ZIP)」
 
-## 🚀 部署到 GitHub Pages
+## 使用方式
+1. 上傳表格圖片
+2. 調整欄列數直到裁切線對齊
+3. 按「✂️ 開始裁切」，再下載 ZIP
 
-```bash
-git init
-git add .
-git commit -m "init: Line動畫製作 PWA"
-git branch -M main
-git remote add origin https://github.com/<username>/<repo>.git
-git push -u origin main
-```
+## 技術與依賴
+- 單檔 HTML PWA（`index.html` 內含全部 HTML/CSS/JS），`manifest.json` + `sw.js` 提供安裝到主畫面與離線快取。
+- Canvas 裁切與去背，JSZip（cdnjs）打包；規格參考 LINE Creators 官方指南
 
-然後在 GitHub repo → **Settings → Pages** → Source 選 `main` 分支，等待幾分鐘後即可訪問。
-
-## 📱 安裝 PWA
-
-在支援的瀏覽器（Chrome / Edge / Safari iOS）中打開網頁，  
-點擊「**安裝**」或「**加入主畫面**」即可將此 App 安裝到裝置。
-
-## ⚙ 技術規格
-
-| 項目 | 值 |
-|------|-----|
-| display | standalone |
-| theme_color | #1a73e8 |
-| lang | zh-TW |
-| scope | /cmt/ |
-
----
-*由 [PWA 打包神器](https://github.com) 自動生成*
+## 相關 repo
+- [Cmt](https://github.com/kftseng2oo1/Cmt)：LINE 動態貼圖編輯器
